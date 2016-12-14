@@ -1,0 +1,438 @@
+# This is a file.
+
+Les goroutines par la pratique
+
+2 Jan 2016
+
+Didier Roche
+Canonical
+http://didrocks.fr
+@didrocks
++DidierRoche
+
+* Introduction
+
+* La concurrence
+
+La concurrence est la composition d'execution de bouts de code indépendants.
+
+C'est une manière de structurer votre programme, une manière d'écrire du code plus propre, plus restreint, et qui intéragit avec d'autres unités indépendantes.
+
+Ce n'est pas du *parallélisme*.
+
+* La concurrence n'est pas du parallélisme
+
+La concurrence n'est pas du parallélisme, bien qu'elle permet de faire tourner du code en parallèle.
+
+Si vous n'avez qu'un seul processeur, votre programme est toujours concurrent, mais n'est pas parallèle.
+
+D'un autre côté, un programme concurrent bien écrit tournera de manière efficace en parallèle sur plusieurs processeurs.
+
+Un très bon post:
+.link http://golang.org/s/concurrency-is-not-parallelism
+
+* Les goroutines et la concurrence en go
+
+L'idée est d'abstraire des notions classiques complexes de la concurrence (les threads, semaphores, locks, barriers, etc.))
+
+La concurrence est disponible comme fonctionalités premières de go, avec les goroutines, channels, select statement…
+
+* Notions de base
+
+* Une fonction "boring"
+
+Prenons un exemple pour montrer les fonctionalités de la concurrence et des goroutines avec une fonction ennuyante:
+
+.play -edit concurrency/support/boring.go /START/,/STOP.*/
+
+: Rendons les intervalles d'attente non prédictibles (mais tout de même en dessous d'une seconde).
+: time.Second -> time.Sleep(time.Duration(rand.Intn(1e3)) * time.Millisecond) 
+
+* Execution classique
+
+La fonction *boring* ne s'arrête jamais
+
+.play concurrency/support/lessboring.go /^func.main/,$
+
+* Execution d'une goroutine
+
+Le mot clef *go* execute la fonction comme d'habitude, mais ne fait pas attendre la fonction appelante.
+
+*go* lance une goroutine.
+
+La fonctionalité est similar au *&* à la fin d'une command shell.
+
+.play concurrency/support/goboring.go 1,/^}/
+
+* Il y a les bons et les mauvais programmeurs…
+
+Lorsque main retourne, le programme quitte et entraine la fonction boring avec elle.
+
+On peut donc attendre un peu avant de quitter la fonction main, ce qui donne le temps à la goroutine de se lancer.
+
+.play concurrency/support/waitgoboring.go /func.main/,/^}/
+
+* Attendre une goroutine!
+
+Un WaitGroup permet d'attendre qu'une goroutine se termine
+
+.play concurrency/support/waitgoboringwaitgroup.go /START/,/STOP/
+
+* Communication
+
+Il y a un problème dans notre example: main() n'a pas accès a une valeur de retour de la goroutine.
+
+Nous avons juste imprimé le résultat à l'écran, en prétendant avoir eu une conversation.
+
+Une vraie conversation a besoin de *communication*.
+
+"Don't communicate by sharing memory, share memory by communicating."
+
+* Channels
+
+Un channel en Go est une connection entre plusieurs goroutines, les permettant de communiquer et de s'attendre.
+
+.play -edit concurrency/support/channels1.go /START/,/STOP/
+
+* Les channels sont par défaut bidirectionnels
+
+On peut écrire et lire dans n'importe quel sens du channel.
+
+.play -edit concurrency/support/channelsbidir1.go /START/,/STOP/
+
+* Synchronisation
+
+Lors la fonction principale execute *<-messages*, il attend de recevoir une valeur d'un émetteur.
+
+De la même manière, quand la goroutine exécute *messages* *<-* *"ping"*, il attend qu'un receveur soit prêt à accepter la valeur.
+
+L'émetteur et le receveur s'attendent donc mutuellement pour pouvoir synchroniser une valeur. Sinon, la goroutine reste sur cette instruction.
+
+* Synchronisation (cont.)
+
+.image concurrency/images/syncchannel.png 500 _
+
+Les channels permettent donc de communiquer et de se synchroniser.
+
+* Utilisation de channels pour boring : communication
+
+Un channel connecte les goroutines "main" et "boring" pour qu'elles puissent communiquer.
+
+.play concurrency/support/changoboring.go /START/,/STOP/
+
+* Utilisation de channels pour boring : synchronisation
+
+Un channel connecte les goroutines "main" et "boring" pour qu'elles puissent se synchroniser.
+
+.play concurrency/support/changoboringsync.go /START/,/STOP/
+
+* WaitGroup vs quit channel
+
+Quand on a plusieurs goroutines, pour attendre qu'elles soient toute terminées, on préfère le WaitGroup.
+Sinon, il faut lire plusieurs fois le signal d'attente.
+.play concurrency/support/changoboringmultiplesync.go /START/,/STOP/
+
+* WaitGroup vs quit channel (cont.)
+
+.play concurrency/support/changoboringmultiplewg.go /START/,/STOP/
+
+Attention, dans ces 2 cas, on ne demande pas à une goroutine de se terminer, on attend qu'elle termine!
+
+* Deadlocks
+
+Il est assez facile de se faire piéger avec les channels
+
+.play concurrency/support/channels2.go /START1/,/STOP1/
+
+ou:
+.code concurrency/support/channels2.go /START2/,/STOP2/
+
+* Les channels peuvent avoir un buffer
+
+.play -edit concurrency/support/channels3.go /START1/,/STOP1/
+
+On perd donc la propriété de synchronisation.
+
+Lire bloque toujours tant qu'aucune valeur n'est disponible.
+
+Le buffering est pour des cas particuliers (distributions de charge entre plusieurs goroutines, etc.). Ce n'est pas un moyen de supprimer un deadlock!
+
+: Remplacer la ligne blanche par
+: messages <- "ping"
+: pour montrer qu'il n'y en a que 2 avant deadlock
+
+* Buffered channels (cont.)
+
+.image concurrency/images/bufferedchannel.png 400 _
+
+* "Patterns"
+
+* Génerateur: fonction qui retourne un channel
+
+On peut retourner un channel, puisque c'est une valeur comme une autre, comme les strings ou integers.
+
+.play concurrency/support/generatorboring.go /START1/,/STOP1/
+.code concurrency/support/generatorboring.go /START2/,/STOP2/
+
+* Channels, comme une communication vers un service
+
+Notre fonction boring retourne donc un channel pour communiquer avec lui.
+
+On peut donc facilement recevoir plusieurs valeurs de plusieurs services.
+
+.play concurrency/support/generator2boring.go /START1/,/STOP1/
+
+* Multiplexing
+
+Le programme précédent fait que Anne attend que Joe ait envoyé son message pour continuer (lockstep).
+On peut utiliser une fonction fan-in pour recevoir une valeur dès qu'un des deux est près.
+
+.image concurrency/images/gophermegaphones.jpg
+
+* Multiplexing (cont.)
+
+.code concurrency/support/faninboring.go /START3/,/STOP3/
+.play concurrency/support/faninboring.go /START1/,/STOP1/
+
+* Select
+
+Une structure de contrôle uniquement dédié à la concurrence.
+
+C'est la raison pour laquelle les channels et goroutines sont des implémentations interne au langage Go.
+
+* Select
+
+Select permet de gérer plusieurs channels en même temps. C'est un peu comme un switch, mais chaque "case" est un channel de communication:
+- Tous les channels sont évalués.
+- La sélection entière est bloquée jusqu'à ce qu'il y ait au moins un channel de communication qui est prêt à communiquer, ce qu'il fait donc.
+- Si plusieurs channels sont prêts, un est choisi de manière pseudo-aléatoire.
+- S'il y a une clause "default", son exécution est immédiate si aucun channel n'est prêt.
+
+.code concurrency/support/select.go /START0/,/STOP0/
+
+* Fan-in avec select
+
+On peut réécrire notre fonction "fanIn". Une seule goroutine sera nécessaire quelque soit le nombre de channel à merger.
+
+Au lieu de:
+
+.code concurrency/support/faninboring.go /START3/,/STOP3/
+
+* Fan-in avec select
+
+On aura:
+
+.play concurrency/support/selectboring.go /START3/,/STOP3/
+
+* Timeout avec select
+
+La fonction *time.After* retourne un channel qui émet une valeur uniquement après une durée spécifique. Le channel délivre alors le temps courant, une seule fois.
+
+.play concurrency/support/timeout.go /START1/,/STOP1/
+
+* Timeout de la conversation entière avec select
+
+Si on créé le timer une seule fois (avant la boucle for), le timeout sera donc sur la conversation entière.
+Il faut noter la différence avec l'exemple précédent où chaque message était soumis au timeout et non l'ensemble.
+
+.play concurrency/support/timeoutall.go /START1/,/STOP1/
+
+* Quit channel
+
+On a vu comment on peut faire attendre la goroutine main pour que les autres quittent avec un channel, mais on peut faire l'inverse: les demander de quitter.
+
+* Quit channel (cont.)
+
+.play -edit concurrency/support/quit.go /START/,/STOP/
+
+: mentioner le // do nothing
+: ajouter time.Sleep(time.Second); juste après le "<-quit:" -> pas de message de retour 
+
+* Recevoir sur un channel de quit
+
+On peut donc utiliser ce quit channel pour synchroniser le "quit" de la goroutine principale
+
+.code concurrency/support/rcvquit.go /START1/,/STOP1/
+.play concurrency/support/rcvquit.go /START2/,/STOP2/
+
+: la fonction cleanup print son nom, et est exécuté avant l'envoie du quit
+: fmt.Println("Bye bye") n'est pas imprimé: on a quitté avant la vraie fin de la goroutine
+
+* Quit + WaitGroup
+
+Il est mieux d'ajouter un WaitGroup, comme précédent, pour s'assurer que toutes les goroutines aient le temps de quitter.
+
+.play concurrency/support/rcvquitwg.go /START1/,/STOP1/
+.code concurrency/support/rcvquitwg.go /START2/,/STOP2/
+.code concurrency/support/rcvquitwg.go /START3/,/STOP3/
+
+: à noter l'utilisation de &sync.Waigroup{} pour avoir un pointer directement sur la struct
+: la fonction cleanup est en defer, et sera toujours executée (même quand un autre code path est choisi d'exit), mais après Bye Bye
+: on est sûr comme cela que toute la/les fonctions de la goroutine ont terminés proprement
+: si on est la temps, on peut parler des receive channel only 
+
+* Les channels: round 2. close or nil channel
+
+Les channels peuvent être fermés ou mis à nil, cela a des effets intéressants.
+
+.play concurrency/support/closechan.go /START/,/STOP/
+
+* Envoyer vers un channel clos panique
+
+.play concurrency/support/closechansending.go /START/,/STOP/
+
+* Un channel clos ne bloque jamais
+
+Une fois le channel clos, il retourne la valeur par défaut, mais ne bloque jamais.
+
+.play concurrency/support/closechanunblocked.go /START/,/STOP/
+
+* Quit channel: reprenons notre exemple de channel "quit"
+
+.play concurrency/support/closechanquitexample1.go /START/,/STOP/
+
+2 problèmes ici:
+- Si la goroutine n'essaie pas de lire le channel "quit", la goroutine principale est bloquée (le channel n'a pas de buffer)
+- Si plusieurs goroutines utilisent ce channel "quit" pour quitter, il faut que la goroutine principale connaisse le nombre de goroutines "enfant" et envoie exactement le nombre de fois une valeur pour que tout le monde quitte proprement.
+
+* Quit channel: signaler en la fermant!
+
+On peut remédier à ces 2 problèmes en fermant tout simplement le channel au lieu d'envoyer une valeur, puisqu'il ne bloquera alors jamais en lecture.
+
+.play concurrency/support/closechanquitexample2.go /START/,/STOP/
+
+* Attendre que plusieurs channels soient fermés
+
+Une implémentation naïve:
+.play concurrency/support/nilchan3.go /START1/,/STOP1/
+.code concurrency/support/nilchan3.go /START2/,/STOP2/
+
+Mais cela ne marche pas (boucle très rapide, on s'appuie sur la chance pour que les 2 cas passent…)
+
+* Un channel nil bloque toujours
+
+.play concurrency/support/nilchan1.go /START1/,/STOP1/
+
+Il n'est pas sélectionné dans un select:
+.play concurrency/support/nilchan2.go /START/,/STOP/
+
+* Très utile quand on veut détecter que plusieurs channels sont fermés!
+
+.play concurrency/support/nilchan4.go /START1/,/STOP1/
+.code concurrency/support/nilchan4.go /START2/,/STOP2/
+
+* Quelques exemples
+
+* Ping pong
+
+.play concurrency/support/pingpong.go /STARTMAIN1/,/STOPMAIN1/
+
+* Chinese whispers, gopher style
+
+.image concurrency/images/gophereartrumpet.jpg
+
+* Daisy-chain
+
+.play concurrency/support/daisy.go /func/,$
+
+* Exemple: la recherche Google (Google Search)
+	
+Q: Qu'est qu'une recherche Google fait?
+
+R: À partir d'une requête, on retourne une page de résultats correspondant à cette recherche (et quelques pubs…).
+
+Q: Comment récupère-t-on ces résultats de recherche?
+
+R: On envoie en backend des requêtes de recherche Web, Image, Youtube, Maps, News… et on mélange les résultats.
+
+Comment implémenter ceci?
+
+* Google Search: Un faux framework
+
+On peut simuler la fonction de recherche avec un sleep et un print.
+
+.code concurrency/support/google.go /START2/,/STOP2/
+
+.code concurrency/support/google.go /START3/,/STOP3/
+
+* Google Search: Testons!
+
+.play concurrency/support/google.go /func.main/,/}/
+
+* Google Search 1.0
+
+La fonction Google prends une requête en paramètre et retourne un slice de résultats (des strings).
+
+Google() invoque les fonctions Web, Image, puis Video, les unes après les autres, et concatène les résultats dans un slice.
+
+.play concurrency/support/google.go /START1/,/STOP1/
+
+* Google Search 2.0
+
+Faison les exécuter de manière concurrentes, et attendons tous les résultats.
+
+.play concurrency/support/google2.1.go /Google/,/^}/
+
+Pas de lock/mutex, pas de variable de conditions, pas de callbacks.
+
+* Google Search 2.1
+
+Ne pas attendre sur les serveurs lents en ajoutant un timeout.
+
+.play concurrency/support/google2.2.go /START/,/STOP/
+
+Toujours pas de lock/mutex, pas de variable de conditions, pas de callbacks.
+
+* Éviter les timeouts
+
+Q: Comment peut-on éviter d'avoir des résultats partiels dûs aux serveurs lents?
+
+R: Avoir plusieurs serveurs. On envoie la même requête sur plusieurs réplicas, et on utilise la première réponse reçue.
+
+.code concurrency/support/google2.3.go /START1/,/STOP1/
+
+* Utilisation de la fonction First
+
+.play concurrency/support/google2.3.go /START2/,/STOP2/
+
+* Google Search 3.0
+
+Réduire la latence par l'utilisation des réplicas (et donc moins de timeouts).
+
+.play concurrency/support/google3.0.go /START/,/STOP/
+
+Et tout cela, sans locks/mutex, variables de conditions, ou callbacks!
+
+* Pour résumer
+
+Il est très simple en peu de code et en utilisant que les primitives de Go de transformer un programme:
+- slow
+- séquentiel
+- fragile
+
+en un programme qui est:
+- rapide
+- concurrent
+- supporte des réplicas
+- robuste.
+
+* Liens!
+
+Go concurrency patterns:
+
+.link http://golang.org/s/concurrency-is-not-parallelism
+.link https://www.youtube.com/watch?v=f6kdp27TYZs
+.link https://blog.golang.org/advanced-go-concurrency-patterns
+
+Curious channels:
+
+.link https://dave.cheney.net/2013/04/30/curious-channels
+
+The nature of channels in Go:
+
+.link https://www.goinggo.net/2014/02/the-nature-of-channels-in-go.html
+.link https://blog.golang.org/pipelines
+
+Context library:
+
+.link https://blog.golang.org/context
