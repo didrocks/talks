@@ -2,7 +2,7 @@
 
 Les goroutines par la pratique
 
-2 Jan 2016
+3 Jan 2016
 
 Didier Roche
 Canonical
@@ -14,7 +14,7 @@ http://didrocks.fr
 
 * La concurrence
 
-La concurrence est la composition d'execution de bouts de code indépendants.
+La concurrence est la composition d'exécution de bouts de code indépendants.
 
 C'est une manière de structurer votre programme, une manière d'écrire du code plus propre, plus restreint, et qui intéragit avec d'autres unités indépendantes.
 
@@ -35,7 +35,7 @@ Un très bon post:
 
 L'idée est d'abstraire des notions classiques complexes de la concurrence (les threads, semaphores, locks, barriers, etc.))
 
-La concurrence est disponible comme fonctionalités premières de go, avec les goroutines, channels, select statement…
+La concurrence est disponible comme fonctionalité première de go, avec les goroutines, channels, select statement…
 
 * Notions de base
 
@@ -44,9 +44,6 @@ La concurrence est disponible comme fonctionalités premières de go, avec les g
 Prenons un exemple pour montrer les fonctionalités de la concurrence et des goroutines avec une fonction ennuyante:
 
 .play -edit concurrency/support/boring.go /START/,/STOP.*/
-
-: Rendons les intervalles d'attente non prédictibles (mais tout de même en dessous d'une seconde).
-: time.Second -> time.Sleep(time.Duration(rand.Intn(1e3)) * time.Millisecond) 
 
 * Execution classique
 
